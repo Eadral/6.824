@@ -180,10 +180,16 @@ type RequestVoteReply struct {
 //
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		if rf.status == Leader || rf.status == Candidate {
+			rf.transToFollower()
+		}
+	}
 	reply.Term = rf.currentTerm
-	if reply.Term < rf.currentTerm {
+	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
-		rf.Log("reject request vote from %v because of term", args.CandidateId)
+		rf.Log("reject request vote from %v because of term %v", args.CandidateId, args.Term)
 		return
 	}
 
@@ -253,6 +259,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.resetTimeOut()
 	if rf.status != Leader {
 		rf.votedFor = -1
+	}
+
+	if args.Term > rf.currentTerm {
+		rf.currentTerm = args.Term
+		if rf.status == Leader || rf.status == Candidate {
+			rf.transToFollower()
+		}
 	}
 
 	reply.Term = rf.currentTerm
@@ -344,15 +357,16 @@ func (rf *Raft) stepFollower() {
 }
 
 func (rf *Raft) stepCandidate() {
-	if int(atomic.LoadInt64(&rf.votedNumber)) == len(rf.peers) {
-		if int(atomic.LoadInt64(&rf.grantedVotedNumber)) > len(rf.peers)/2 {
-			rf.transToLeader()
-		}
+	//if int(atomic.LoadInt64(&rf.votedNumber)) == len(rf.peers) {
+	if int(atomic.LoadInt64(&rf.grantedVotedNumber)) > len(rf.peers)/2 {
+		rf.transToLeader()
 	}
+	//}
 
 }
 
 func (rf *Raft) requestVotes() {
+	rf.votedFor = -1
 	rf.currentTerm++
 	rf.Log("request votes")
 	rf.grantedVotedNumber = 0
@@ -417,7 +431,7 @@ func (rf *Raft) sendHeartbeatToAll() {
 
 func (rf *Raft) transToFollower() {
 	rf.Log("trans to follower")
-
+	rf.votedFor = -1
 	rf.status = Follower
 }
 
@@ -505,7 +519,7 @@ func (rf *Raft) Log(format string, a ...interface{}) {
 	case Leader:
 		status = "Leader   "
 	}
-	log.Print(fmt.Sprintf("[%v %v] ", rf.me, status), fmt.Sprintf(format, a...))
+	log.Print(fmt.Sprintf("[Term: %v, Id: %v, %v ] ", rf.currentTerm, rf.me, status), fmt.Sprintf(format, a...))
 }
 
 //
